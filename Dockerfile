@@ -64,5 +64,11 @@ COPY --from=build /app /app
 # Ensure `editly` binary available in container
 RUN npm link
 
+# Create necessary directories
+RUN mkdir -p /app/uploads /outputs /app/temp
+
+# Expose API port
+EXPOSE 3001
+
 ENTRYPOINT ["/usr/bin/dumb-init", "--", "xvfb-run", "--server-args", "-screen 0 1280x1024x24 -ac"]
-CMD [ "editly" ]
+CMD [ "node", "dist/api-server.js" ]

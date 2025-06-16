@@ -1,13 +1,22 @@
 services:
   editly:
-    container_name: editly
+    container_name: editly-api
     image: editly/editly:latest
     build:
       context: .
       dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
     volumes:
       - "outputs:/outputs"
+      - "uploads:/app/uploads"
       - ./examples/assets/:/app/examples/assets/
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    command: ["node", "dist/api-server.js"]
+    restart: unless-stopped
 
 volumes:
   outputs:
+  uploads:

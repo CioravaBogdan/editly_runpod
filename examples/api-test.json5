@@ -1,0 +1,45 @@
+{
+  "outPath": "/outputs/test-video.mp4",
+  "width": 640,
+  "height": 480,
+  "fps": 30,
+  "fast": true,
+  "clips": [
+    {
+      "duration": 3,
+      "layers": [
+        {
+          "type": "title",
+          "text": "Hello from Editly API!",
+          "textColor": "#ffffff",
+          "position": "center"
+        },
+        {
+          "type": "fill-color",
+          "color": "#ff6600"
+        }
+      ]
+    },
+    {
+      "duration": 2,
+      "layers": [
+        {
+          "type": "title",
+          "text": "Integrated with n8n",
+          "textColor": "#000000",
+          "position": "center"
+        },
+        {
+          "type": "linear-gradient",
+          "colors": ["#00ff00", "#0000ff"]
+        }
+      ]
+    }
+  ],
+  "defaults": {
+    "transition": {
+      "duration": 0.5,
+      "name": "fade"
+    }
+  }
+}
