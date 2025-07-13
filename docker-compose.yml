@@ -14,8 +14,18 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
+      - DISPLAY=:99
     command: ["node", "dist/api-server.js"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on: []
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
 
 volumes:
   outputs:

@@ -55,7 +55,7 @@ FROM node:lts-bookworm
 
 # Install runtime dependencies
 RUN apt-get update -y \
-  && apt-get -y install ffmpeg dumb-init xvfb libcairo2 libpango1.0 libgif7 librsvg2-2 \
+  && apt-get -y install ffmpeg dumb-init xvfb libcairo2 libpango1.0 libgif7 librsvg2-2 curl \
   && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 WORKDIR /app
@@ -67,8 +67,12 @@ RUN npm link
 # Create necessary directories
 RUN mkdir -p /app/uploads /outputs /app/temp
 
+# Copy and make init script executable
+COPY docker-init.sh /docker-init.sh
+RUN chmod +x /docker-init.sh
+
 # Expose API port
 EXPOSE 3001
 
-ENTRYPOINT ["/usr/bin/dumb-init", "--", "xvfb-run", "--server-args", "-screen 0 1280x1024x24 -ac"]
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/docker-init.sh", "xvfb-run", "--server-args", "-screen 0 1280x1024x24 -ac"]
 CMD [ "node", "dist/api-server.js" ]
