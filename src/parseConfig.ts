@@ -1,7 +1,10 @@
 import assert from "assert";
 import { registerFont } from "canvas";
 import flatMap from "lodash-es/flatMap.js";
+import { cpus } from "os";
 import pMap from "p-map";
+
+const CPU_CORES = cpus().length;
 import { basename } from "path";
 import { Configuration } from "./configuration.js";
 import { readDuration, readVideoFileInfo } from "./ffmpeg.js";
@@ -169,7 +172,7 @@ export default async function parseConfig({
 
             return handleLayer(layer);
           },
-          { concurrency: 1 },
+          { concurrency: Math.min(CPU_CORES, 8) },
         ),
       );
 
@@ -255,7 +258,7 @@ export default async function parseConfig({
         layers: layersOut,
       };
     },
-    { concurrency: 1 },
+    { concurrency: Math.min(CPU_CORES, clips.length) },
   );
 
   let totalClipDuration = 0;

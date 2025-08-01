@@ -8,25 +8,100 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      - "outputs:/outputs"
-      - "uploads:/app/uploads"
-      - ./examples/assets/:/app/examples/assets/
+      - "./outputs:/outputs"
+      - "./uploads:/app/uploads"
+      - "./examples/assets:/app/examples/assets"
+      # Mapping pentru fișierele de la n8n/external
+      - "./temp:/app/temp"
+      - "./files:/app/files"
     environment:
+      # Configurații de bază
       - NODE_ENV=production
       - PORT=3001
-      - DISPLAY=:99
+      
+      # 🚀 Optimizări Node.js pentru server puternic
+      - UV_THREADPOOL_SIZE=256          # 🚀 DUBLEZ thread pool-ul pentru I/O intensiv
+      - NODE_OPTIONS=--max-old-space-size=28672 --max-semi-space-size=2048 --expose-gc
+      
+      # 🎬 Optimizări FFmpeg EXTREME pentru 32 cores
+      - FFMPEG_THREADS=32               # 🚀 FORȚEZ 32 threads FFmpeg
+      - FFMPEG_OPTIONS=-preset ultrafast -tune zerolatency -threads 32
+      
+      # 📁 Paths
+      - TEMP_DIR=/tmp
+      - OUTPUT_DIR=/outputs
+      - UPLOAD_DIR=/app/uploads
+      
+      # ⚡ Configurații Editly pentru performanță EXTREME
+      - EDITLY_FAST_MODE=true
+      - EDITLY_PARALLEL_RENDERS=64      # 🚀 DUBLEZ paralelismul (64)
+      - EDITLY_CLEANUP_TEMP=false
+      - EDITLY_LOG_LEVEL=error
+      - EDITLY_MAX_QUEUE_SIZE=2000      # 🚀 DUBLEZ queue size
+      
+      # 🚀 OPTIMIZĂRI EXTREME LINUX CONTAINER
+      - OMP_NUM_THREADS=32              # 🚀 OpenMP pe toate cores
+      - MKL_NUM_THREADS=32              # 🚀 Intel MKL pe toate cores  
+      - NUMEXPR_NUM_THREADS=32          # 🚀 NumExpr pe toate cores
+      - OPENBLAS_NUM_THREADS=32         # 🚀 OpenBLAS pe toate cores
+      
+    deploy:
+      resources:
+        limits:
+          cpus: '32.0'      # 🚀 TOATE CPU-urile disponibile (32)
+          memory: 30G       # 🚀 APROAPE TOATĂ MEMORIA (30GB din 32GB)
+        reservations:
+          cpus: '24.0'      # 🚀 Reserve majoritatea cores (24)
+          memory: 20G       # 🚀 Reserve memoria pentru procesare
+    
+    # 🚀 CONFIGURAȚII EXTREME DE PERFORMANȚĂ DOCKER
+    privileged: true              # 🚀 Acces complet la resurse sistem
+    security_opt:
+      - seccomp:unconfined       # 🚀 Elimină restricții seccomp
+    ulimits:
+      memlock:
+        soft: -1                 # 🚀 Unlimited memory locking  
+        hard: -1
+      nofile:
+        soft: 1000000            # 🚀 1M file descriptors
+        hard: 1000000
+      nproc:
+        soft: 1000000            # 🚀 1M processes
+        hard: 1000000
+    shm_size: 8gb                # 🚀 8GB shared memory pentru FFmpeg
+    ipc: host                    # 🚀 Shared IPC cu host pentru performanță
+    
     command: ["node", "dist/api-server.js"]
     restart: unless-stopped
+    
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    depends_on: []
+    
+    # RAM disk pentru super viteză
     tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+      - /tmp:size=8G,mode=1777
+    
+    # Logging optimizat
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    
+    # Setări de rețea pentru performanță
+    networks:
+      - editly-network
+
+networks:
+  editly-network:
+    driver: bridge
 
 volumes:
   outputs:
+    driver: local
   uploads:
+    driver: local

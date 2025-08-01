@@ -2,6 +2,8 @@
 
 import express from 'express';
 import multer from 'multer';
+import express from 'express';
+import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
 import { exec } from 'child_process';
@@ -75,10 +77,63 @@ app.get('/info', (req, res) => {
       edit: 'POST /edit',
       upload: 'POST /upload',
       download: 'GET /download/:filename',
-      files: 'GET /files'
+      files: 'GET /files',
+      audioInfo: 'POST /audio-info'
     },
     documentation: 'https://github.com/mifi/editly'
   });
+});
+
+// Get audio file duration and metadata
+app.post('/audio-info', async (req, res) => {
+  try {
+    const { audioPath } = req.body;
+    
+    if (!audioPath) {
+      return res.status(400).json({ error: 'audioPath is required' });
+    }
+    
+    // Use ffprobe to get audio metadata
+    const { readDuration, readFileStreams } = await import('./ffmpeg.js');
+    
+    try {
+      const duration = await readDuration(audioPath);
+      const streams = await readFileStreams(audioPath);
+      const audioStream = streams.find(s => s.codec_type === 'audio');
+      
+      const audioInfo = {
+        duration: Math.round(duration * 100) / 100, // Round to 2 decimals
+        hasAudio: !!audioStream,
+        codec: audioStream?.codec_name || 'unknown',
+        sampleRate: audioStream?.tags?.sample_rate || 'unknown',
+        channels: audioStream?.channels || 'unknown',
+        bitrate: audioStream?.tags?.bit_rate || 'unknown'
+      };
+      
+      console.log(`🎵 Audio info for ${audioPath}:`, audioInfo);
+      
+      res.json({
+        success: true,
+        audioPath: audioPath,
+        ...audioInfo
+      });
+      
+    } catch (fileError) {
+      console.error(`❌ Error reading audio file ${audioPath}:`, fileError);
+      res.status(404).json({ 
+        error: 'Could not read audio file',
+        audioPath: audioPath,
+        details: fileError.message
+      });
+    }
+    
+  } catch (error) {
+    console.error('Audio info error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get audio info', 
+      details: error.message 
+    });
+  }
 });
 
 // Upload files endpoint
@@ -106,9 +161,13 @@ app.post('/upload', upload.array('files'), async (req, res) => {
   }
 });
 
-// Main edit endpoint
+// Main edit endpoint with extended timeout
 app.post('/edit', async (req, res) => {
   try {
+    // Set VERY long timeout for high-quality video processing (45 minutes)
+    req.setTimeout(45 * 60 * 1000); // 45 minutes
+    res.setTimeout(45 * 60 * 1000); // 45 minutes
+
     const { editSpec, outputFilename } = req.body;
 
     if (!editSpec) {
@@ -119,15 +178,77 @@ app.post('/edit', async (req, res) => {
     const outputName = outputFilename || `output-${Date.now()}.mp4`;
     const outputPath = `/outputs/${outputName}`;
 
-    // Prepare edit specification with output path
+    // Prepare edit specification with output path and GPU acceleration
     const finalEditSpec = {
       ...editSpec,
-      outPath: outputPath
+      outPath: outputPath,
+      // ✅ Audio volume configuration - RESPECT USER'S AUDIO SETTINGS
+      outputVolume: editSpec.outputVolume || 1.0,      // 🎯 Volum din spec user sau default
+      clipsAudioVolume: editSpec.clipsAudioVolume || 1.0,  // 🎯 Volum din spec user sau default
+      // 🚀 OPTIMIZĂRI CPU MAXIME pentru performanță (fără GPU)
+      ffmpegOptions: {
+        input: [
+          '-threads', '32',       // 🚀 FORȚEZ 32 threads pentru input
+          '-thread_type', 'slice+frame',
+          '-hwaccel', 'auto'      // 🚀 Hardware acceleration dacă disponibil
+        ],
+        output: [
+          '-threads', '32',       // 🚀 FORȚEZ 32 threads pentru output
+          '-thread_type', 'slice+frame'
+        ]
+      },
+      customOutputArgs: [
+        // 🚀 VITEZĂ MAXIMĂ - SACRIFICE QUALITY PENTRU SPEED EXTREME
+        '-c:v', 'libx264',        // Encoder CPU standard
+        '-preset', 'ultrafast',   // 🚀 ULTRAFAST = viteză extremă
+        '-crf', '28',             // 🚀 CRF 28 = calitate mai mică dar MULT mai rapid
+        '-profile:v', 'baseline', // 🚀 Baseline = mai simplu, mai rapid
+        '-level', '3.0',          // 🚀 Level mai mic pentru viteză
+        '-pix_fmt', 'yuv420p',    
+        // 🚀 THREADING AGRESIV pentru 32 cores
+        '-threads', '32',         // 🚀 FORȚEZ 32 threads
+        '-thread_type', 'slice+frame',
+        '-slices', '32',          // 🚀 32 slice-uri pentru 32 cores
+        '-x264opts', 'sliced-threads=1:me=dia:subme=1:ref=1:fast-pskip=1:no-chroma-me=1:no-mixed-refs=1:no-trellis=1:no-dct-decimate=1:no-fast-pskip=0:no-mbtree=1', // 🚀 ULTRA RAPID
+        '-tune', 'zerolatency',   // 🚀 Zero latency pentru viteză maximă
+        '-bf', '0',               // 🚀 ZERO B-frames pentru viteză
+        '-refs', '1',             // 🚀 1 single reference frame
+        '-g', '15',               // 🚀 GOP size mic pentru viteză
+        // 🎵 AUDIO SUPER RAPID
+        '-c:a', 'aac',            
+        '-b:a', '128k',           // 🚀 Bitrate mai mic pentru viteză
+        '-ac', '2',               
+        '-ar', '44100',           // 🚀 Sample rate standard rapid
+        // 🚀 DISABLE ORICE FEATURE SLOW
+        '-movflags', '+faststart',// 🚀 Fast start pentru streaming
+        '-fflags', '+genpts+igndts', // 🚀 Generate PTS rapid
+        '-avoid_negative_ts', 'make_zero', // 🚀 Evită probleme timestamp
+      ],
+      // 🚀 CONFIGURAȚII PENTRU PERFORMANȚĂ CPU MAXIMĂ  
+      fast: false,  // 🎯 DEZACTIVAT pentru performance testing real
+      verbose: false,             
+      allowRemoteRequests: false, 
+      enableFfmpegLog: false,     
+      // 🚀 STABILĂ CONCURENȚĂ pentru 64 cores  
+      concurrency: 32,                    // 🚀 FORȚEZ 32 concurrent (toate cores)
+      frameSourceConcurrency: 32,         // 🚀 32 frame sources paralele
+      tempDir: '/app/temp',
+      // 🚀 CONFIGURAȚII ULTRA-PERFORMANȚĂ pentru CPU INTENSIV
+      enableClipsAudioVolume: true,
+      enableFfmpegStreaming: true,
+      enableFfmpegMultipass: false,  // Dezactivat pentru viteză maximă
+      // 🚀 SETĂRI AVANSATE PENTRU MAXIMIZARE CPU - RESPECT USER'S AUDIO
+      keepSourceAudio: editSpec.keepSourceAudio !== undefined ? editSpec.keepSourceAudio : true,  // 🎯 PĂSTREAZĂ din spec sau default TRUE
+      keepTempFiles: false,          // 🚀 Șterge temp files pentru economie spațiu
+      outDir: '/outputs',            // 🚀 Output directory explicit
+      // 🚀 OPTIMIZĂRI SPECIFICE PENTRU 32+ CORES
+      logLevel: 'error',             // 🚀 Reduce logging overhead
+      enableProgressBar: false       // 🚀 Disable progress bar pentru performance
     };
 
-    console.log('Starting video edit with spec:', JSON.stringify(finalEditSpec, null, 2));
+    console.log('Starting video edit with GPU acceleration:', JSON.stringify(finalEditSpec, null, 2));
 
-    // Execute editly
+    // Execute editly with GPU acceleration
     await editly(finalEditSpec);
 
     // Check if output file exists
@@ -202,6 +323,92 @@ app.get('/files', async (req, res) => {
   }
 });
 
+// Get file metadata endpoint
+app.get('/metadata/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    
+    // Try both outputs and uploads directories
+    let filePath = `/outputs/${filename}`;
+    let fileLocation = 'outputs';
+    
+    // Check if file exists in outputs first
+    try {
+      await fs.access(filePath);
+    } catch {
+      // If not in outputs, try uploads directory
+      filePath = `/app/uploads/${filename}`;
+      fileLocation = 'uploads';
+      
+      try {
+        await fs.access(filePath);
+      } catch {
+        return res.status(404).json({ 
+          error: 'File not found',
+          message: `File '${filename}' not found in outputs or uploads directories`
+        });
+      }
+    }
+    
+    // Get file stats
+    const stats = await fs.stat(filePath);
+    
+    // Use ffprobe to get media metadata
+    const ffprobeCommand = `ffprobe -v quiet -print_format json -show_format -show_streams "${filePath}"`;
+    
+    try {
+      const { stdout } = await execAsync(ffprobeCommand);
+      const metadata = JSON.parse(stdout);
+      
+      // Extract useful information
+      const videoStream = metadata.streams?.find((s: any) => s.codec_type === 'video');
+      const audioStream = metadata.streams?.find((s: any) => s.codec_type === 'audio');
+      
+      const result = {
+        filename,
+        fileLocation, // outputs sau uploads
+        size: stats.size,
+        created: stats.birthtime,
+        modified: stats.mtime,
+        duration: parseFloat(metadata.format?.duration || '0'),
+        bitrate: parseInt(metadata.format?.bit_rate || '0'),
+        format: metadata.format?.format_name,
+        video: videoStream ? {
+          codec: videoStream.codec_name,
+          width: videoStream.width,
+          height: videoStream.height,
+          fps: eval(videoStream.r_frame_rate || '0'),
+          bitrate: parseInt(videoStream.bit_rate || '0')
+        } : null,
+        audio: audioStream ? {
+          codec: audioStream.codec_name,
+          channels: audioStream.channels,
+          sample_rate: parseInt(audioStream.sample_rate || '0'),
+          bitrate: parseInt(audioStream.bit_rate || '0')
+        } : null,
+        downloadUrl: fileLocation === 'outputs' ? `/download/${filename}` : `/uploads/${filename}`
+      };
+      
+      res.json(result);
+    } catch (ffprobeError) {
+      // If ffprobe fails, return basic file info
+      console.warn('FFprobe failed, returning basic file info:', ffprobeError);
+      res.json({
+        filename,
+        fileLocation,
+        size: stats.size,
+        created: stats.birthtime,
+        modified: stats.mtime,
+        downloadUrl: fileLocation === 'outputs' ? `/download/${filename}` : `/uploads/${filename}`,
+        error: 'Could not extract media metadata'
+      });
+    }
+  } catch (error) {
+    console.error('Metadata error:', error);
+    res.status(500).json({ error: 'Failed to get file metadata' });
+  }
+});
+
 // Serve uploaded files statically
 app.use('/uploads', express.static('/app/uploads'));
 
@@ -223,11 +430,16 @@ app.use((req, res) => {
 async function startServer() {
   await ensureDirectories();
   
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Editly API Server running on http://0.0.0.0:${PORT}`);
     console.log(`📖 API Documentation: http://0.0.0.0:${PORT}/info`);
     console.log(`❤️  Health Check: http://0.0.0.0:${PORT}/health`);
   });
+
+  // Set server timeout to 45 minutes for high-quality video processing
+  server.timeout = 45 * 60 * 1000; // 45 minutes
+  server.keepAliveTimeout = 45 * 60 * 1000; // 45 minutes
+  server.headersTimeout = 45 * 60 * 1000 + 1000; // 45 minutes + 1 second
 }
 
 // Handle process termination

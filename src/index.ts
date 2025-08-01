@@ -8,6 +8,8 @@ import { Configuration, type ConfigurationOptions } from "./configuration.js";
 import { configureFf, ffmpeg, parseFps } from "./ffmpeg.js";
 import { createFrameSource } from "./frameSource.js";
 import parseConfig, { ProcessedClip } from "./parseConfig.js";
+import { getPerformanceMonitor, resetPerformanceMonitor } from "./performanceMonitor.js";
+import { terminateRenderWorkerPool } from "./renderWorker.js";
 import { createFabricCanvas, rgbaToFabricImage } from "./sources/fabric.js";
 import type { RenderSingleFrameConfig } from "./types.js";
 import { assertFileValid, multipleOf2 } from "./util.js";
@@ -186,6 +188,10 @@ async function Editly(input: ConfigurationOptions): Promise<void> {
       if (i !== clips.length - 1) newAcc -= c.transition.duration;
       return newAcc;
     }, 0);
+
+  // Start performance monitoring
+  const performanceMonitor = getPerformanceMonitor();
+  performanceMonitor.start();
 
   function getOutputArgs() {
     if (customOutputArgs) {
@@ -448,6 +454,9 @@ async function Editly(input: ConfigurationOptions): Promise<void> {
         totalFramesWritten += 1;
         fromClipFrameAt += 1;
         if (isInTransition) toClipFrameAt += 1;
+        
+        // Track frame rendering for performance monitoring
+        performanceMonitor.frameRendered();
       } // End while loop
 
       outProcess.stdin?.end();
@@ -468,6 +477,15 @@ async function Editly(input: ConfigurationOptions): Promise<void> {
       if (outProcessExitCode !== 0 && !(err as any).isTerminated) throw err;
     }
   } finally {
+    // Stop performance monitoring and show summary
+    performanceMonitor.stop();
+    
+    // Cleanup worker pool
+    await terminateRenderWorkerPool();
+    
+    // Reset performance monitor for next run
+    resetPerformanceMonitor();
+    
     if (!keepTmp) await fsExtra.remove(tmpDir);
   }
 

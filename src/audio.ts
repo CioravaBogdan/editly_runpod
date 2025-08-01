@@ -136,7 +136,7 @@ export default ({ verbose, tmpDir }: AudioOptions) => {
                 return undefined;
               }
             },
-            { concurrency: 4 },
+            { concurrency: Math.min(require('os').cpus().length, 8) },
           );
 
           const processedAudioLayers = processedAudioLayersRaw.filter(
@@ -173,7 +173,7 @@ export default ({ verbose, tmpDir }: AudioOptions) => {
           silent,
         };
       },
-      { concurrency: 4 },
+      { concurrency: Math.min(require('os').cpus().length, 8) },
     );
   }
 

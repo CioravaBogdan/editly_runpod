@@ -108,7 +108,7 @@ const cli = meow(
 
         throw new Error(`Unrecognized clip or file type "${clip}"`);
       },
-      { concurrency: 1 },
+      { concurrency: Math.min(require('os').cpus().length, clips.length) },
     );
 
     assert(clips.length > 0, "No clips specified");
