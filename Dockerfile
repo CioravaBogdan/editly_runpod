@@ -1,4 +1,4 @@
-FROM node:lts-bookworm AS build
+FROM node:18-bookworm AS build
 
 # Install dependencies for building canvas/gl
 RUN apt-get update -y
@@ -21,7 +21,9 @@ WORKDIR /app
 
 # Install node dependencies
 COPY package.json ./
-RUN npm install --no-fund --no-audit
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm config set maxsockets 1 && \
+    npm install --no-fund --no-audit --prefer-offline
 
 # Add app source
 COPY . .
@@ -50,16 +52,36 @@ RUN apt-get --purge autoremove -y \
 # Remove Apt cache
 RUN rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
-# Final stage for app image
-FROM node:lts-bookworm
+# ---- Modern FFmpeg stage ----
+# Use latest FFmpeg with full codec support
+FROM alpine:latest as ffmpeg-download
 
-# Install runtime dependencies
+RUN apk add --no-cache curl unzip
+WORKDIR /tmp
+
+# Download latest FFmpeg static build
+RUN curl -L "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl-shared.tar.xz" -o ffmpeg.tar.xz && \
+    tar -xf ffmpeg.tar.xz && \
+    mv ffmpeg-master-latest-linux64-gpl-shared ffmpeg-build
+
+# ---- Final runtime image ----
+FROM node:18-bookworm
+
+# Install minimal runtime libs; no ffmpeg via apt to avoid non-NVENC builds
 RUN apt-get update -y \
-  && apt-get -y install ffmpeg dumb-init xvfb libcairo2 libpango1.0 libgif7 librsvg2-2 curl \
-  && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
+    && apt-get -y install dumb-init xvfb libcairo2 libpango1.0 libgif7 librsvg2-2 libfribidi0 libfribidi-bin curl \
+    && apt-get -y install libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 WORKDIR /app
 COPY --from=build /app /app
+
+# Install modern FFmpeg build
+COPY --from=ffmpeg-download /tmp/ffmpeg-build /usr/local/ffmpeg
+
+# Ensure FFmpeg is in PATH
+ENV PATH="/usr/local/ffmpeg/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/ffmpeg/lib:${LD_LIBRARY_PATH}"
 
 # Ensure `editly` binary available in container
 RUN npm link

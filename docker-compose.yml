@@ -18,41 +18,54 @@ services:
       # Configurații de bază
       - NODE_ENV=production
       - PORT=3001
-      
+      # 🌐 CLOUDFLARE TUNNEL - External domain for download URLs
+      - EXTERNAL_DOMAIN=https://editly.byinfant.com
+      # 🎮 MAXIMUM PERFORMANCE - CPU ONLY
+      - USE_GPU=false
+      - VIDEO_ENCODER=libx264
+      # 🚀 PARALLEL PROCESSING - REAL 16-CORE UTILIZATION
+      - USE_PARALLEL_PROCESSING=true
+      - NVENC_PRESET=medium      # Better quality preset
+      - NVENC_CQ=18              # High quality (lower = better)
+      - GOP_SIZE=60
+      - FFMPEG_THREADS=16  # Use 16 threads for better stability
+
       # 🚀 Optimizări Node.js pentru server puternic
       - UV_THREADPOOL_SIZE=256          # 🚀 DUBLEZ thread pool-ul pentru I/O intensiv
-      - NODE_OPTIONS=--max-old-space-size=28672 --max-semi-space-size=2048 --expose-gc
-      
-      # 🎬 Optimizări FFmpeg EXTREME pentru 32 cores
-      - FFMPEG_THREADS=32               # 🚀 FORȚEZ 32 threads FFmpeg
-      - FFMPEG_OPTIONS=-preset ultrafast -tune zerolatency -threads 32
-      
+      - NODE_OPTIONS=--max-old-space-size=28672 --max-semi-space-size=2048 --experimental-worker
+      - LIBUV_THREAD_POOL_SIZE=256      # 🚀 Explicit libuv thread pool
+
+      # 🎬 Optimizări FFmpeg (opțional)
+      # FFMPEG_OPTIONS is optional and can be overridden by API
+
       # 📁 Paths
       - TEMP_DIR=/tmp
       - OUTPUT_DIR=/outputs
       - UPLOAD_DIR=/app/uploads
-      
-      # ⚡ Configurații Editly pentru performanță EXTREME
-      - EDITLY_FAST_MODE=true
-      - EDITLY_PARALLEL_RENDERS=64      # 🚀 DUBLEZ paralelismul (64)
+
+      # ⚡ Configurații Editly pentru performanță
+      - EDITLY_FAST_MODE=false          # 🚀 Dezactivat pentru calitate maximă
+      - EDITLY_PARALLEL_RENDERS=32      # 🚀 32 procese paralele pentru 32 cores
       - EDITLY_CLEANUP_TEMP=false
       - EDITLY_LOG_LEVEL=error
-      - EDITLY_MAX_QUEUE_SIZE=2000      # 🚀 DUBLEZ queue size
-      
-      # 🚀 OPTIMIZĂRI EXTREME LINUX CONTAINER
-      - OMP_NUM_THREADS=32              # 🚀 OpenMP pe toate cores
-      - MKL_NUM_THREADS=32              # 🚀 Intel MKL pe toate cores  
-      - NUMEXPR_NUM_THREADS=32          # 🚀 NumExpr pe toate cores
-      - OPENBLAS_NUM_THREADS=32         # 🚀 OpenBLAS pe toate cores
+      - EDITLY_MAX_QUEUE_SIZE=1000      # 🚀 Queue optimizat
+      - CANVAS_THREADS=32               # 🚀 Canvas Worker Threads
+      - RENDER_WORKERS=32               # 🚀 Render Workers paraleli
+
+      # 🚀 OPTIMIZĂRI pentru 16 cores
+      - OMP_NUM_THREADS=16              # 🚀 OpenMP pe 16 cores
+      - MKL_NUM_THREADS=16              # 🚀 Intel MKL pe 16 cores  
+      - NUMEXPR_NUM_THREADS=16          # 🚀 NumExpr pe 16 cores
+      - OPENBLAS_NUM_THREADS=16         # 🚀 OpenBLAS pe 16 cores
       
     deploy:
       resources:
         limits:
-          cpus: '32.0'      # 🚀 TOATE CPU-urile disponibile (32)
-          memory: 30G       # 🚀 APROAPE TOATĂ MEMORIA (30GB din 32GB)
+          cpus: '16.0'      # 🚀 16 THREADS for stability
+          memory: 16G       # 🚀 16GB RAM
         reservations:
-          cpus: '24.0'      # 🚀 Reserve majoritatea cores (24)
-          memory: 20G       # 🚀 Reserve memoria pentru procesare
+          cpus: '14.0'      # 🚀 Reserve 14 threads
+          memory: 12G       # 🚀 Reserve 12GB RAM
     
     # 🚀 CONFIGURAȚII EXTREME DE PERFORMANȚĂ DOCKER
     privileged: true              # 🚀 Acces complet la resurse sistem
@@ -68,7 +81,7 @@ services:
       nproc:
         soft: 1000000            # 🚀 1M processes
         hard: 1000000
-    shm_size: 8gb                # 🚀 8GB shared memory pentru FFmpeg
+    shm_size: 4gb                # 🚀 4GB shared memory pentru FFmpeg
     ipc: host                    # 🚀 Shared IPC cu host pentru performanță
     
     command: ["node", "dist/api-server.js"]
@@ -81,9 +94,9 @@ services:
       retries: 3
       start_period: 40s
     
-    # RAM disk pentru super viteză
+    # RAM disk pentru viteză
     tmpfs:
-      - /tmp:size=8G,mode=1777
+      - /tmp:size=4G,mode=1777
     
     # Logging optimizat
     logging:
@@ -92,13 +105,19 @@ services:
         max-size: "100m"
         max-file: "5"
     
-    # Setări de rețea pentru performanță
+    # Setări de rețea pentru performanță și n8n integration
     networks:
       - editly-network
+      - n8n-network
+    
+    # GPU enablement (Docker Desktop with WSL2 / Linux)
+    # gpus: all  # Commented out - requires WSL2 + NVIDIA Container Toolkit
 
 networks:
   editly-network:
     driver: bridge
+  n8n-network:
+    external: true
 
 volumes:
   outputs:

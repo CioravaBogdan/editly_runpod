@@ -2,19 +2,77 @@
 
 import express from 'express';
 import multer from 'multer';
-import express from 'express';
-import multer from 'multer';
 import path from 'path';
 import fs from 'fs/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import cors from 'cors';
 import editly from './index.js';
+import ParallelRenderer from './parallel-renderer.js';
+
+// 🚀 OPTIMIZARE 16 CORES - Environment variable pentru thread configuration
+// Use 0 (auto) by default to let codecs pick optimal threading
+const FFMPEG_THREADS = process.env.FFMPEG_THREADS || '0';
+
+// 🌐 CLOUDFLARE TUNNEL - External domain configuration
+const EXTERNAL_DOMAIN = process.env.EXTERNAL_DOMAIN || 'https://editly.byinfant.com';
+
+// 🎮 GPU ENCODING TOGGLE
+const USE_GPU = String(process.env.USE_GPU || '').toLowerCase() === 'true';
+const VIDEO_ENCODER = (process.env.VIDEO_ENCODER || (USE_GPU ? 'h264_nvenc' : 'libx264')).toLowerCase();
+
+// 🚀 PARALLEL PROCESSING TOGGLE - Force enable for true parallelization
+const USE_PARALLEL_PROCESSING = String(process.env.USE_PARALLEL_PROCESSING || 'true').toLowerCase() === 'true';
+
+function buildEncoderArgs(encoder: string): string[] {
+  if (encoder === 'h264_nvenc') {
+    // Safe NVENC defaults focused on speed with reasonable size
+    // Ensure ffmpeg has NVENC available: `ffmpeg -hide_banner -encoders | grep nvenc`
+    return [
+      '-c:v', 'h264_nvenc',
+      '-preset', process.env.NVENC_PRESET || 'fast',
+      '-cq', process.env.NVENC_CQ || '20',
+      '-g', process.env.GOP_SIZE || '120',
+      '-bf', '0',
+      '-pix_fmt', 'yuv420p',
+      // Threads mostly ignored by NVENC, but keep for filters/mux
+      '-threads', FFMPEG_THREADS
+    ];
+  }
+  if (encoder === 'hevc_nvenc') {
+    return [
+      '-c:v', 'hevc_nvenc',
+      '-preset', process.env.NVENC_PRESET || 'fast',
+      '-cq', process.env.NVENC_CQ || '20',
+      '-g', process.env.GOP_SIZE || '120',
+      '-bf', '0',
+      '-pix_fmt', 'yuv420p',
+      '-threads', FFMPEG_THREADS
+    ];
+  }
+  // CPU MAXIMUM PERFORMANCE
+  return [
+    '-c:v', 'libx264',
+    '-preset', 'slow',          // Maximum quality
+    '-crf', '10',               // Very high quality (10 = near lossless)
+    '-profile:v', 'high',       // High profile supports yuv444p
+    '-level', '4.0',            // Higher level for better quality
+    '-g', '30',                 // Smaller GOP
+    '-bf', '0',                 // No B-frames
+    '-refs', '1',               // Single reference
+    '-threads', FFMPEG_THREADS || '16',  // Use 16 threads
+    '-x264opts', 'threads=16:lookahead_threads=8:sliced_threads=1',
+    '-tune', 'zerolatency'      // Zero latency tuning
+  ];
+}
 
 const execAsync = promisify(exec);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// 🚀 INITIALIZE PARALLEL RENDERER FOR REAL 16-CORE PROCESSING
+const parallelRenderer = new ParallelRenderer();
 
 // Configure CORS to allow n8n access
 app.use(cors({
@@ -71,6 +129,12 @@ app.get('/info', (req, res) => {
     service: 'Editly Video Editor API',
     version: '1.0.0',
     description: 'HTTP API wrapper for Editly video editing library',
+    runtime: {
+      externalDomain: EXTERNAL_DOMAIN,
+      useGpu: USE_GPU,
+      videoEncoder: VIDEO_ENCODER,
+      ffmpegThreads: FFMPEG_THREADS
+    },
     endpoints: {
       health: 'GET /health',
       info: 'GET /info',
@@ -178,60 +242,125 @@ app.post('/edit', async (req, res) => {
     const outputName = outputFilename || `output-${Date.now()}.mp4`;
     const outputPath = `/outputs/${outputName}`;
 
-    // Prepare edit specification with output path and GPU acceleration
+  // 🔧 ROBUST FILTER FOR PROBLEMATIC FFmpeg PARAMETERS FROM CLIENT REQUESTS
+    // Remove frame_threads, duplicate threads, and other problematic parameters
+    let clientCustomArgs = [];
+    if (editSpec.customOutputArgs && Array.isArray(editSpec.customOutputArgs)) {
+      console.log(`🔍 Processing ${editSpec.customOutputArgs.length} client customOutputArgs...`);
+      
+      const problematicParams = [
+        '-frame_threads', '-frame-threads',  // Direct frame_threads parameters
+        '-thread_type', // We'll set our own thread_type
+      ];
+      
+      for (let i = 0; i < editSpec.customOutputArgs.length; i++) {
+        const arg = editSpec.customOutputArgs[i];
+        
+        // Skip problematic parameters entirely
+        if (problematicParams.includes(arg)) {
+          console.log(`🚫 SKIPPED problematic parameter: ${arg}`);
+          if (i + 1 < editSpec.customOutputArgs.length) {
+            console.log(`🚫 SKIPPED its value: ${editSpec.customOutputArgs[i + 1]}`);
+            i++; // Skip the next argument (parameter value)
+          }
+          continue;
+        }
+        
+        // Process x264opts parameter to remove frame_threads
+        if (arg === '-x264opts' && i + 1 < editSpec.customOutputArgs.length) {
+          const nextArg = editSpec.customOutputArgs[i + 1];
+          if (typeof nextArg === 'string') {
+            // Remove frame_threads and any thread-related options that conflict
+            let cleanedOpts = nextArg
+              .replace(/:?frame_threads=\d+/g, '')     // Remove frame_threads=X
+              .replace(/:?sliced-threads=\d+/g, '')    // Remove sliced-threads=X  
+              .replace(/:?lookahead_threads=\d+/g, '') // Remove lookahead_threads=X (will add our own)
+              .replace(/^:+|:+$/g, '')                 // Clean up leading/trailing colons
+              .replace(/:+/g, ':')                     // Clean up multiple colons
+              .replace(/^:$/, '');                     // Remove if only colon left
+            
+            // If we cleaned everything out, skip this parameter entirely
+            if (!cleanedOpts || cleanedOpts === '') {
+              console.log(`🚫 SKIPPED empty x264opts after cleaning: "${nextArg}"`);
+              i++; // Skip the next argument too
+              continue;
+            }
+            
+            console.log(`🔧 CLEANED x264opts: "${nextArg}" -> "${cleanedOpts}"`);
+            clientCustomArgs.push(arg);
+            clientCustomArgs.push(cleanedOpts);
+            i++; // Skip next argument since we processed it
+            continue;
+          }
+        }
+        
+        // Skip duplicate -threads parameters (we set our own)
+        if (arg === '-threads') {
+          console.log(`🚫 SKIPPED duplicate threads parameter from client`);
+          if (i + 1 < editSpec.customOutputArgs.length) {
+            console.log(`🚫 SKIPPED threads value: ${editSpec.customOutputArgs[i + 1]}`);
+            i++; // Skip the next argument (thread count)
+          }
+          continue;
+        }
+        
+        // Copy all other arguments unchanged
+        clientCustomArgs.push(arg);
+      }
+      
+      console.log(`✅ Client args filtered: ${editSpec.customOutputArgs.length} -> ${clientCustomArgs.length} final args`);
+    }
+
+  // Prepare edit specification with output path and GPU/CPU encoder selection
+  const videoEncoderArgs = buildEncoderArgs(VIDEO_ENCODER);
     const finalEditSpec = {
       ...editSpec,
       outPath: outputPath,
       // ✅ Audio volume configuration - RESPECT USER'S AUDIO SETTINGS
       outputVolume: editSpec.outputVolume || 1.0,      // 🎯 Volum din spec user sau default
       clipsAudioVolume: editSpec.clipsAudioVolume || 1.0,  // 🎯 Volum din spec user sau default
-      // 🚀 OPTIMIZĂRI CPU MAXIME pentru performanță (fără GPU)
+      // 🚀 OPTIMIZĂRI CPU MAXIME pentru 16 cores
       ffmpegOptions: {
         input: [
-          '-threads', '32',       // 🚀 FORȚEZ 32 threads pentru input
+          '-threads', FFMPEG_THREADS,       // 🚀 FORȚEZ 16 threads pentru input
           '-thread_type', 'slice+frame',
           '-hwaccel', 'auto'      // 🚀 Hardware acceleration dacă disponibil
         ],
         output: [
-          '-threads', '32',       // 🚀 FORȚEZ 32 threads pentru output
+          '-threads', FFMPEG_THREADS,       // 🚀 FORȚEZ 16 threads pentru output
           '-thread_type', 'slice+frame'
         ]
       },
       customOutputArgs: [
-        // 🚀 VITEZĂ MAXIMĂ - SACRIFICE QUALITY PENTRU SPEED EXTREME
-        '-c:v', 'libx264',        // Encoder CPU standard
-        '-preset', 'ultrafast',   // 🚀 ULTRAFAST = viteză extremă
-        '-crf', '28',             // 🚀 CRF 28 = calitate mai mică dar MULT mai rapid
-        '-profile:v', 'baseline', // 🚀 Baseline = mai simplu, mai rapid
-        '-level', '3.0',          // 🚀 Level mai mic pentru viteză
-        '-pix_fmt', 'yuv420p',    
-        // 🚀 THREADING AGRESIV pentru 32 cores
-        '-threads', '32',         // 🚀 FORȚEZ 32 threads
-        '-thread_type', 'slice+frame',
-        '-slices', '32',          // 🚀 32 slice-uri pentru 32 cores
-        '-x264opts', 'sliced-threads=1:me=dia:subme=1:ref=1:fast-pskip=1:no-chroma-me=1:no-mixed-refs=1:no-trellis=1:no-dct-decimate=1:no-fast-pskip=0:no-mbtree=1', // 🚀 ULTRA RAPID
-        '-tune', 'zerolatency',   // 🚀 Zero latency pentru viteză maximă
-        '-bf', '0',               // 🚀 ZERO B-frames pentru viteză
-        '-refs', '1',             // 🚀 1 single reference frame
-        '-g', '15',               // 🚀 GOP size mic pentru viteză
-        // 🎵 AUDIO SUPER RAPID
-        '-c:a', 'aac',            
-        '-b:a', '128k',           // 🚀 Bitrate mai mic pentru viteză
-        '-ac', '2',               
-        '-ar', '44100',           // 🚀 Sample rate standard rapid
-        // 🚀 DISABLE ORICE FEATURE SLOW
-        '-movflags', '+faststart',// 🚀 Fast start pentru streaming
-        '-fflags', '+genpts+igndts', // 🚀 Generate PTS rapid
-        '-avoid_negative_ts', 'make_zero', // 🚀 Evită probleme timestamp
+        ...videoEncoderArgs,
+        // 🎬 VIDEO QUALITY SETTINGS
+        '-b:v', '10M',                  // High video bitrate (10 Mbps)
+        '-maxrate', '15M',               // Max bitrate 15 Mbps
+        '-bufsize', '20M',               // Buffer size for quality
+        '-pix_fmt', 'yuv420p',           // Compatible pixel format with baseline profile
+        // 🎵 AUDIO
+        '-c:a', 'aac',
+        '-b:a', process.env.AUDIO_BITRATE || '320k',  // Maximum audio quality
+        '-ac', '2',
+        '-ar', '48000',                  // Higher sample rate
+        // Flags utile pentru playback
+        '-movflags', '+faststart',
+        '-fflags', '+genpts+igndts',
+        '-avoid_negative_ts', 'make_zero',
+        // 🔧 MERGE CLIENT CUSTOM ARGS (after filtering problematic parameters)
+        ...clientCustomArgs,
       ],
-      // 🚀 CONFIGURAȚII PENTRU PERFORMANȚĂ CPU MAXIMĂ  
-      fast: false,  // 🎯 DEZACTIVAT pentru performance testing real
+      // 🚀 CONFIGURAȚII PENTRU CALITATE MAXIMĂ  
+      fast: false,  // Dezactivat pentru calitate maximă
       verbose: false,             
       allowRemoteRequests: false, 
       enableFfmpegLog: false,     
-      // 🚀 STABILĂ CONCURENȚĂ pentru 64 cores  
-      concurrency: 32,                    // 🚀 FORȚEZ 32 concurrent (toate cores)
-      frameSourceConcurrency: 32,         // 🚀 32 frame sources paralele
+      // 🚀 OPTIMĂ PARALELIZARE pentru 16 cores
+      concurrency: 1,                     // 🚀 Un singur video la momentul dat
+      frameSourceConcurrency: 16,         // 🚀 16 frame sources paralele  
+      frameRenderConcurrency: 16,         // 🚀 16 frame renders paralele
+      enableFfmpegLog: false,              // 🚀 Disable pentru performance
+      canvasRenderingConcurrency: 16,     // 🚀 16 canvas renders paralele
       tempDir: '/app/temp',
       // 🚀 CONFIGURAȚII ULTRA-PERFORMANȚĂ pentru CPU INTENSIV
       enableClipsAudioVolume: true,
@@ -241,15 +370,21 @@ app.post('/edit', async (req, res) => {
       keepSourceAudio: editSpec.keepSourceAudio !== undefined ? editSpec.keepSourceAudio : true,  // 🎯 PĂSTREAZĂ din spec sau default TRUE
       keepTempFiles: false,          // 🚀 Șterge temp files pentru economie spațiu
       outDir: '/outputs',            // 🚀 Output directory explicit
-      // 🚀 OPTIMIZĂRI SPECIFICE PENTRU 32+ CORES
+      // 🚀 OPTIMIZĂRI SPECIFICE PENTRU 16 CORES
       logLevel: 'error',             // 🚀 Reduce logging overhead
       enableProgressBar: false       // 🚀 Disable progress bar pentru performance
     };
 
-    console.log('Starting video edit with GPU acceleration:', JSON.stringify(finalEditSpec, null, 2));
+    console.log('Starting video edit with', USE_PARALLEL_PROCESSING ? 'PARALLEL 16-CORE' : 'STANDARD', 'processing:', JSON.stringify(finalEditSpec, null, 2));
 
-    // Execute editly with GPU acceleration
-    await editly(finalEditSpec);
+    // 🚀 USE PARALLEL RENDERER FOR REAL 16-CORE PROCESSING
+    if (USE_PARALLEL_PROCESSING && finalEditSpec.clips && finalEditSpec.clips.length > 1) {
+      console.log(`🚀 Using ParallelRenderer for ${finalEditSpec.clips.length} clips across 16 cores`);
+      await parallelRenderer.renderParallel(finalEditSpec);
+    } else {
+      console.log('🔄 Using standard Editly (single-core)');
+      await editly(finalEditSpec);
+    }
 
     // Check if output file exists
     try {
@@ -258,7 +393,7 @@ app.post('/edit', async (req, res) => {
         message: 'Video editing completed successfully',
         outputPath: outputPath,
         outputFilename: outputName,
-        downloadUrl: `/download/${outputName}`
+        downloadUrl: `${EXTERNAL_DOMAIN}/download/${outputName}`
       });
     } catch (err) {
       throw new Error('Output file was not created');
@@ -308,7 +443,7 @@ app.get('/files', async (req, res) => {
           size: stats.size,
           created: stats.birthtime,
           modified: stats.mtime,
-          downloadUrl: `/download/${filename}`
+          downloadUrl: `${EXTERNAL_DOMAIN}/download/${filename}`
         };
       })
     );
@@ -386,7 +521,7 @@ app.get('/metadata/:filename', async (req, res) => {
           sample_rate: parseInt(audioStream.sample_rate || '0'),
           bitrate: parseInt(audioStream.bit_rate || '0')
         } : null,
-        downloadUrl: fileLocation === 'outputs' ? `/download/${filename}` : `/uploads/${filename}`
+        downloadUrl: fileLocation === 'outputs' ? `${EXTERNAL_DOMAIN}/download/${filename}` : `${EXTERNAL_DOMAIN}/uploads/${filename}`
       };
       
       res.json(result);
@@ -399,7 +534,7 @@ app.get('/metadata/:filename', async (req, res) => {
         size: stats.size,
         created: stats.birthtime,
         modified: stats.mtime,
-        downloadUrl: fileLocation === 'outputs' ? `/download/${filename}` : `/uploads/${filename}`,
+        downloadUrl: fileLocation === 'outputs' ? `${EXTERNAL_DOMAIN}/download/${filename}` : `${EXTERNAL_DOMAIN}/uploads/${filename}`,
         error: 'Could not extract media metadata'
       });
     }

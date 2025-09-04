@@ -110,6 +110,18 @@ editly-tmp-*/
 *.gif
 *.png
 
+# Content files and uploads
+uploads/
+outputs/
+files/
+temp/
+*.mp3
+*.wav
+*.mov
+*.avi
+*.mkv
+*.webm
+
 # Other
 .idea
 pnpm-lock.yaml
