@@ -9,6 +9,7 @@ import { promisify } from 'util';
 import cors from 'cors';
 import editly from './index.js';
 import ParallelRenderer from './parallel-renderer.js';
+import { cleanupService } from './cleanup-service.js';
 
 // 🚀 OPTIMIZARE 16 CORES - Environment variable pentru thread configuration
 // Use 0 (auto) by default to let codecs pick optimal threading
@@ -135,6 +136,12 @@ app.get('/info', (req, res) => {
       videoEncoder: VIDEO_ENCODER,
       ffmpegThreads: FFMPEG_THREADS
     },
+    cleanup: {
+      autoCleanupEnabled: true,
+      cleanupAfterHours: 2,
+      checkIntervalMinutes: 15,
+      directories: ['/outputs', '/app/uploads', '/app/temp', '/app/files', '/tmp']
+    },
     endpoints: {
       health: 'GET /health',
       info: 'GET /info',
@@ -142,7 +149,9 @@ app.get('/info', (req, res) => {
       upload: 'POST /upload',
       download: 'GET /download/:filename',
       files: 'GET /files',
-      audioInfo: 'POST /audio-info'
+      audioInfo: 'POST /audio-info',
+      cleanup: 'POST /cleanup',
+      diskUsage: 'GET /disk-usage'
     },
     documentation: 'https://github.com/mifi/editly'
   });
@@ -544,6 +553,44 @@ app.get('/metadata/:filename', async (req, res) => {
   }
 });
 
+// 🧹 CLEANUP ENDPOINTS
+// Manual cleanup endpoint
+app.post('/cleanup', async (req, res) => {
+  try {
+    const result = await cleanupService.manualCleanup();
+    res.json({
+      success: true,
+      message: 'Cleanup completed',
+      filesDeleted: result.filesDeleted,
+      sizeFreed: result.sizeFreed
+    });
+  } catch (error: any) {
+    console.error('Manual cleanup error:', error);
+    res.status(500).json({ 
+      error: 'Cleanup failed', 
+      details: error.message 
+    });
+  }
+});
+
+// Get disk usage endpoint
+app.get('/disk-usage', async (req, res) => {
+  try {
+    const usage = await cleanupService.getDiskUsage();
+    res.json({
+      success: true,
+      diskUsage: usage,
+      cleanupAfterHours: 2
+    });
+  } catch (error: any) {
+    console.error('Disk usage error:', error);
+    res.status(500).json({ 
+      error: 'Failed to get disk usage', 
+      details: error.message 
+    });
+  }
+});
+
 // Serve uploaded files statically
 app.use('/uploads', express.static('/app/uploads'));
 
@@ -565,6 +612,10 @@ app.use((req, res) => {
 async function startServer() {
   await ensureDirectories();
   
+  // Start cleanup service
+  cleanupService.start();
+  console.log('🧹 Cleanup service started - files will be automatically deleted after 2 hours');
+  
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Editly API Server running on http://0.0.0.0:${PORT}`);
     console.log(`📖 API Documentation: http://0.0.0.0:${PORT}/info`);
@@ -580,11 +631,13 @@ async function startServer() {
 // Handle process termination
 process.on('SIGTERM', () => {
   console.log('Received SIGTERM, shutting down gracefully');
+  cleanupService.stop();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   console.log('Received SIGINT, shutting down gracefully');
+  cleanupService.stop();
   process.exit(0);
 });
 

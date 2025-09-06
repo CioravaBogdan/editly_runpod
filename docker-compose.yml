@@ -30,6 +30,11 @@ services:
       - GOP_SIZE=60
       - FFMPEG_THREADS=16  # Use 16 threads for better stability
 
+      # 🧹 CLEANUP CONFIGURATION
+      - AUTO_CLEANUP_ENABLED=true       # 🧹 Enable automatic file cleanup
+      - CLEANUP_AFTER_HOURS=2           # 🧹 Delete files after 2 hours
+      - CLEANUP_CHECK_INTERVAL_MINUTES=15 # 🧹 Check every 15 minutes
+
       # 🚀 Optimizări Node.js pentru server puternic
       - UV_THREADPOOL_SIZE=256          # 🚀 DUBLEZ thread pool-ul pentru I/O intensiv
       - NODE_OPTIONS=--max-old-space-size=28672 --max-semi-space-size=2048 --experimental-worker
@@ -55,6 +60,7 @@ services:
       # 🚀 OPTIMIZĂRI pentru 16 cores
       - OMP_NUM_THREADS=16              # 🚀 OpenMP pe 16 cores
       - MKL_NUM_THREADS=16              # 🚀 Intel MKL pe 16 cores  
+
       - NUMEXPR_NUM_THREADS=16          # 🚀 NumExpr pe 16 cores
       - OPENBLAS_NUM_THREADS=16         # 🚀 OpenBLAS pe 16 cores
       
