@@ -1,0 +1,23 @@
+{
+  "input": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "outputFilename": "test-runpod-video.mp4",
+    "audioUrl": "https://www.soundjay.com/misc/sounds/bell-ringing-05.wav",
+    "images": [
+      {
+        "url": "https://via.placeholder.com/1080x1920/FF0000/FFFFFF?text=Frame+1",
+        "duration": 3
+      },
+      {
+        "url": "https://via.placeholder.com/1080x1920/00FF00/FFFFFF?text=Frame+2",
+        "duration": 3
+      },
+      {
+        "url": "https://via.placeholder.com/1080x1920/0000FF/FFFFFF?text=Frame+3",
+        "duration": 3
+      }
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+# Ignore RunPod serverless files (CommonJS format required)
+runpod-handler*.js
+storage-handler.js
+test-local.js

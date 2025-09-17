@@ -8,5 +8,12 @@ export default tseslint.config(
   eslint.configs.recommended,
   tseslint.configs.recommended,
   eslintConfigPrettier,
-  { ignores: ["dist/"] },
+  {
+    ignores: [
+      "dist/",
+      "runpod-handler*.js",
+      "storage-handler.js",
+      "test-local.js",
+    ],
+  },
 );

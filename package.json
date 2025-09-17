@@ -13,7 +13,8 @@
     "Skayo <contact@skayo.dev> (https://skayo.dev)"
   ],
   "type": "module",
-  "license": "MIT",  "dependencies": {
+  "license": "MIT",
+  "dependencies": {
     "@types/fs-extra": "^11.0.4",
     "@types/gl": "^6.0.5",
     "@types/gl-shader": "^4.2.5",
@@ -44,20 +45,26 @@
     "multer": "^1.4.5-lts.1",
     "nanoid": "^5.0.7",
     "ndarray": "^1.0.19",
-    "p-map": "^7.0.2"
-  },  "scripts": {
+    "p-map": "^7.0.2",
+    "runpod": "^1.2.0",
+    "@aws-sdk/client-s3": "^3.400.0"
+  },
+  "scripts": {
     "build": "pkgroll --clean-dist --sourcemap",
     "prepublishOnly": "npm run build",
     "test": "vitest",
+    "test:runpod": "node test-local.js",
     "lint": "eslint .",
     "prepare": "husky || true",
     "api-server": "tsx src/api-server.ts",
-    "dev": "tsx watch src/api-server.ts"
+    "dev": "tsx watch src/api-server.ts",
+    "start:runpod": "node runpod-handler.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mifi/editly.git"
-  },  "bin": {
+  },
+  "bin": {
     "editly": "dist/cli.js",
     "editly-api": "dist/api-server.js"
   },
