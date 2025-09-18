@@ -305,6 +305,8 @@ RUN apt-get install -y nodejs
 
 **Package Installation Order** (Critical):
 
+````dockerfile
+**Package Installation Order** (Critical):
 ```dockerfile
 # STEP 1: Remove conflicting packages FIRST
 RUN apt-get remove -y nodejs npm libnode-dev
@@ -315,6 +317,22 @@ RUN apt-get install -y nodejs
 
 # STEP 3: Install other dependencies AFTER Node.js is stable
 RUN apt-get install -y python3 python3-pip ffmpeg
+````
+
+**CommonJS/ES Module Compatibility** (Critical):
+
+```dockerfile
+# Copy handlers with .cjs extension for CommonJS compatibility
+COPY runpod-handler-integrated.js ./runpod-handler.cjs
+COPY storage-handler.js ./storage-handler.cjs
+```
+
+**Python Handler Bridge**:
+
+```python
+# Check for .cjs files (CommonJS modules)
+if os.path.exists("/app/runpod-handler.cjs"):
+    cmd = ["node", "/app/runpod-handler.cjs"]
 ```
 
 **Docker Build Debugging**:
@@ -327,6 +345,19 @@ docker build -f Dockerfile.runpod -t editly-test . --progress=plain --no-cache
 docker run --rm -it editly-test node --version
 docker run --rm -it editly-test python3 --version
 ```
+
+````
+
+**Docker Build Debugging**:
+
+```powershell
+# Build with verbose output
+docker build -f Dockerfile.runpod -t editly-test . --progress=plain --no-cache
+
+# Check intermediate layers
+docker run --rm -it editly-test node --version
+docker run --rm -it editly-test python3 --version
+````
 
 ### Environment Variables
 
@@ -380,6 +411,7 @@ console.log(
 2. **GPU Detection**: Verify `/dev/nvidia*` device files
 3. **Storage Issues**: Test with `STORAGE_TYPE=local` first
 4. **Memory Issues**: Use temporary directories with cleanup
+5. **ES Module/CommonJS Conflicts**: Use `.cjs` extensions for CommonJS handlers
 
 ### Error Logging
 
