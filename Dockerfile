@@ -28,8 +28,10 @@ RUN apt-get update && apt-get install -y \
     libglew-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 18 from NodeSource (clean method)
+# Install Node.js 18 from NodeSource (avoiding conflicts)
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get update && \
+    apt-get remove -y libnode-dev || true && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
@@ -52,8 +54,8 @@ RUN npm ci --only=production || npm install --production
 # Copy application code
 COPY . .
 
-# Build TypeScript if needed
-RUN if [ -f "tsconfig.json" ]; then npm run build; fi
+# Skip build process in production container as dist files are already available
+# RUN if [ -f "tsconfig.json" ]; then npm run build; fi
 
 # Create required directories
 RUN mkdir -p /app/uploads /outputs /app/temp

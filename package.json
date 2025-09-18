@@ -46,7 +46,6 @@
     "nanoid": "^5.0.7",
     "ndarray": "^1.0.19",
     "p-map": "^7.0.2",
-    "runpod": "^1.2.0",
     "@aws-sdk/client-s3": "^3.400.0"
   },
   "scripts": {
