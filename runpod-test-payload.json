@@ -1,0 +1,49 @@
+{
+  "input": {
+    "clips": [
+      {
+        "duration": 3,
+        "layers": [
+          {
+            "type": "title",
+            "text": "🚀 RunPod + Editly",
+            "fontPath": "Calibri",
+            "fontSize": 80,
+            "color": "#FFFFFF",
+            "position": {
+              "x": "50%",
+              "y": "30%"
+            }
+          },
+          {
+            "type": "title",
+            "text": "GPU Accelerated Video Processing",
+            "fontPath": "Calibri",
+            "fontSize": 40,
+            "color": "#00FF00",
+            "position": {
+              "x": "50%",
+              "y": "70%"
+            }
+          }
+        ]
+      },
+      {
+        "duration": 2,
+        "layers": [
+          {
+            "type": "title",
+            "text": "✅ Build Success!",
+            "fontPath": "Calibri",
+            "fontSize": 60,
+            "color": "#FFD700"
+          }
+        ]
+      }
+    ],
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "outPath": "success_test.mp4"
+  }
+}
