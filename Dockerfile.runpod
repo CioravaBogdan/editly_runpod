@@ -28,16 +28,15 @@ COPY . .
 # Build TypeScript if needed
 RUN npm run build || echo "No build script"
 
-# Copy RunPod handler
-COPY runpod-handler-integrated.js ./runpod-handler.js
-COPY storage-handler.js ./
+# Install Python dependencies for RunPod
+RUN pip3 install --no-cache-dir runpod requests
 
-# Environment pentru RunPod
+# Environment for RunPod
 ENV RUNPOD_ENDPOINT=true
 ENV USE_GPU=true
 ENV VIDEO_ENCODER=h264_nvenc
 ENV NVENC_PRESET=p5
 ENV NVENC_CQ=23
 
-# RunPod expects this
-CMD ["node", "runpod-handler.js"]
+# RunPod serverless entry point
+CMD ["python3", "runpod_handler.py"]
