@@ -44,54 +44,94 @@ def start_editly_server():
 # Start the Editly server when the module loads
 editly_process = start_editly_server()
 
+#!/usr/bin/env python3
+import runpod
+import subprocess
+import json
+import os
+import time
+import tempfile
+import shutil
+from pathlib import Path
+
 def handler(job):
     """
-    RunPod handler function that interfaces with Editly
+    RunPod handler function for Editly video processing
     """
     try:
-        job_input = job.get("input", {})
+        job_input = job["input"]
         
-        # Validate input
-        if not job_input:
-            return {"error": "No input provided"}
+        # Create temporary directory for this job
+        job_id = job.get("id", f"job_{int(time.time())}")
+        temp_dir = Path(f"/tmp/editly_{job_id}")
+        temp_dir.mkdir(parents=True, exist_ok=True)
         
-        # Send request to Editly server
-        try:
-            response = requests.post(
-                "http://localhost:3001/api/render",
-                json=job_input,
-                timeout=300  # 5 minutes timeout
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                
-                # If there's an output file, we might want to return it
-                if "outputPath" in result:
-                    output_path = result["outputPath"]
-                    if os.path.exists(output_path):
-                        # For RunPod, we typically return the file path or upload to storage
-                        # For now, return the file path
-                        result["output_file"] = output_path
-                        result["status"] = "completed"
-                
-                return result
-            else:
-                return {
-                    "error": f"Editly server error: {response.status_code}",
-                    "details": response.text
-                }
-                
-        except requests.exceptions.Timeout:
-            return {"error": "Request timeout - video processing took too long"}
-        except requests.exceptions.ConnectionError:
-            return {"error": "Cannot connect to Editly server"}
-        except Exception as e:
-            return {"error": f"Request failed: {str(e)}"}
-            
+        # Set output path
+        output_filename = job_input.get("outPath", f"output_{job_id}.mp4")
+        output_path = temp_dir / output_filename
+        job_input["outPath"] = str(output_path)
+        
+        # Write config to temp file
+        config_path = temp_dir / "config.json"
+        with open(config_path, "w") as f:
+            json.dump(job_input, f)
+        
+        # Check if GPU is available
+        gpu_available = os.path.exists('/dev/nvidia0')
+        
+        # Set FFmpeg hardware acceleration if GPU available
+        env = os.environ.copy()
+        if gpu_available:
+            env['FFMPEG_ENCODER'] = 'h264_nvenc'
+            env['FFMPEG_PRESET'] = 'p4'  # balanced preset
+            print("GPU detected, using NVENC hardware acceleration")
+        
+        # Run Editly
+        cmd = ["npx", "editly", "--json", str(config_path)]
+        
+        print(f"Executing: {' '.join(cmd)}")
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd="/app"
+        )
+        
+        if result.returncode != 0:
+            raise Exception(f"Editly failed: {result.stderr}")
+        
+        # Check if output exists
+        if not output_path.exists():
+            raise Exception(f"Output file not created: {output_path}")
+        
+        # Read the output file
+        with open(output_path, "rb") as f:
+            video_data = f.read()
+        
+        # Convert to base64 for transfer
+        import base64
+        video_base64 = base64.b64encode(video_data).decode('utf-8')
+        
+        # Clean up
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        return {
+            "video": video_base64,
+            "filename": output_filename,
+            "size": len(video_data),
+            "gpu_used": gpu_available
+        }
+        
     except Exception as e:
-        logger.error(f"Handler error: {e}")
-        return {"error": f"Handler error: {str(e)}"}
+        print(f"Error in handler: {str(e)}")
+        # Clean up on error
+        if 'temp_dir' in locals():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        return {"error": str(e)}
+
+if __name__ == "__main__":
+    runpod.serverless.start({"handler": handler})
 
 # This is required for RunPod
 runpod.serverless.start({"handler": handler})
