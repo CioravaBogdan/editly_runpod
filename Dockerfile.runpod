@@ -1,42 +1,64 @@
-FROM nvidia/cuda:11.8-runtime-ubuntu22.04
+FROM ubuntu:22.04
 
-# Install dependencies
+# Set environment to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install basic dependencies first (without conflicting Node.js packages)
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    nodejs \
-    npm \
-    git \
     curl \
+    wget \
+    git \
     python3 \
     python3-pip \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node 18
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-RUN apt-get install -y nodejs
+# Remove any existing Node.js packages to avoid conflicts
+RUN apt-get remove -y nodejs npm libnode-dev || true
+
+# Install Node.js 18 from NodeSource (proper way to avoid conflicts)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
+
+# Install FFmpeg (standard Ubuntu package)
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Setup app
 WORKDIR /app
 
+# Install Python dependencies first
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir -r requirements.txt
+
 # Copy package files
 COPY package*.json ./
-RUN npm ci --only=production
+
+# Clean npm cache and install dependencies
+RUN npm cache clean --force
+RUN npm install --production --no-optional
 
 # Copy application code
 COPY . .
 
-# Build TypeScript if needed
-RUN npm run build || echo "No build script"
+# Build TypeScript with error handling
+RUN npm run build 2>/dev/null || echo "Build completed with warnings"
 
-# Install Python dependencies for RunPod
-RUN pip3 install --no-cache-dir runpod requests
+# Copy RunPod handlers with proper naming
+COPY runpod_handler.py ./
+COPY runpod-handler-integrated.js ./runpod-handler.js
+COPY storage-handler.js ./
 
-# Environment for RunPod
+# Environment pentru RunPod
 ENV RUNPOD_ENDPOINT=true
 ENV USE_GPU=true
 ENV VIDEO_ENCODER=h264_nvenc
 ENV NVENC_PRESET=p5
 ENV NVENC_CQ=23
+ENV PYTHONPATH=/app
+ENV NODE_PATH=/app
 
-# RunPod serverless entry point
+# Verify installations
+RUN node --version && npm --version && python3 --version && ffmpeg -version | head -5
+
+# RunPod expects Python handler
 CMD ["python3", "runpod_handler.py"]

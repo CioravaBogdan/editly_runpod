@@ -1,49 +1,3 @@
-import runpod
-import subprocess
-import json
-import os
-import requests
-import time
-import tempfile
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def start_editly_server():
-    """Start the Editly Node.js server in background"""
-    try:
-        # Start the Node.js server
-        process = subprocess.Popen([
-            "/usr/bin/dumb-init", "--", "/docker-init.sh", 
-            "xvfb-run", "--server-args", "-screen 0 1280x1024x24 -ac",
-            "node", "dist/api-server.js"
-        ], cwd="/app")
-        
-        # Wait for server to start
-        time.sleep(10)
-        
-        # Test if server is running
-        for i in range(30):  # Try for 30 seconds
-            try:
-                response = requests.get("http://localhost:3001/health", timeout=2)
-                if response.status_code == 200:
-                    logger.info("Editly server started successfully")
-                    return process
-            except:
-                time.sleep(1)
-        
-        logger.error("Failed to start Editly server")
-        return None
-        
-    except Exception as e:
-        logger.error(f"Error starting Editly server: {e}")
-        return None
-
-# Start the Editly server when the module loads
-editly_process = start_editly_server()
-
 #!/usr/bin/env python3
 import runpod
 import subprocess
@@ -52,12 +6,19 @@ import os
 import time
 import tempfile
 import shutil
+import base64
+import logging
 from pathlib import Path
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def handler(job):
     """
     RunPod handler function for Editly video processing
     """
+    temp_dir = None
     try:
         job_input = job["input"]
         
@@ -74,44 +35,65 @@ def handler(job):
         # Write config to temp file
         config_path = temp_dir / "config.json"
         with open(config_path, "w") as f:
-            json.dump(job_input, f)
+            json.dump(job_input, f, indent=2)
         
         # Check if GPU is available
-        gpu_available = os.path.exists('/dev/nvidia0')
+        gpu_available = os.path.exists('/dev/nvidia0') or os.path.exists('/dev/nvidiactl')
         
         # Set FFmpeg hardware acceleration if GPU available
         env = os.environ.copy()
         if gpu_available:
             env['FFMPEG_ENCODER'] = 'h264_nvenc'
             env['FFMPEG_PRESET'] = 'p4'  # balanced preset
-            print("GPU detected, using NVENC hardware acceleration")
+            env['USE_GPU'] = 'true'
+            logger.info("GPU detected, using NVENC hardware acceleration")
+        else:
+            env['FFMPEG_ENCODER'] = 'libx264'
+            env['USE_GPU'] = 'false'
+            logger.info("No GPU detected, using CPU encoding")
         
-        # Run Editly
-        cmd = ["npx", "editly", "--json", str(config_path)]
+        # Try Node.js handler first (better performance)
+        if os.path.exists("/app/runpod-handler.js"):
+            cmd = ["node", "/app/runpod-handler.js"]
+            logger.info("Using Node.js handler")
+        else:
+            # Fallback to direct editly CLI
+            cmd = ["node", "/app/dist/cli.js", "--json", str(config_path)]
+            logger.info("Using Editly CLI directly")
         
-        print(f"Executing: {' '.join(cmd)}")
+        logger.info(f"Executing: {' '.join(cmd)}")
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             env=env,
-            cwd="/app"
+            cwd="/app",
+            timeout=300  # 5 minute timeout
         )
         
         if result.returncode != 0:
-            raise Exception(f"Editly failed: {result.stderr}")
+            logger.error(f"Command failed with code {result.returncode}")
+            logger.error(f"STDERR: {result.stderr}")
+            logger.error(f"STDOUT: {result.stdout}")
+            raise Exception(f"Video processing failed: {result.stderr}")
         
         # Check if output exists
         if not output_path.exists():
-            raise Exception(f"Output file not created: {output_path}")
+            logger.error(f"Output file not created at: {output_path}")
+            # List contents of temp directory for debugging
+            if temp_dir.exists():
+                files = list(temp_dir.glob("*"))
+                logger.error(f"Files in temp directory: {files}")
+            raise Exception(f"Output file not created: {output_filename}")
         
         # Read the output file
         with open(output_path, "rb") as f:
             video_data = f.read()
         
         # Convert to base64 for transfer
-        import base64
         video_base64 = base64.b64encode(video_data).decode('utf-8')
+        
+        logger.info(f"Successfully processed video: {len(video_data)} bytes")
         
         # Clean up
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -120,18 +102,24 @@ def handler(job):
             "video": video_base64,
             "filename": output_filename,
             "size": len(video_data),
-            "gpu_used": gpu_available
+            "gpu_used": gpu_available,
+            "processing_time": result.returncode,
+            "status": "success"
         }
         
-    except Exception as e:
-        print(f"Error in handler: {str(e)}")
-        # Clean up on error
-        if 'temp_dir' in locals():
+    except subprocess.TimeoutExpired:
+        logger.error("Processing timeout after 5 minutes")
+        if temp_dir and temp_dir.exists():
             shutil.rmtree(temp_dir, ignore_errors=True)
-        return {"error": str(e)}
+        return {"error": "Processing timeout after 5 minutes", "status": "timeout"}
+        
+    except Exception as e:
+        logger.error(f"Error in handler: {str(e)}")
+        # Clean up on error
+        if temp_dir and temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        return {"error": str(e), "status": "error"}
 
 if __name__ == "__main__":
+    logger.info("Starting RunPod serverless handler...")
     runpod.serverless.start({"handler": handler})
-
-# This is required for RunPod
-runpod.serverless.start({"handler": handler})
