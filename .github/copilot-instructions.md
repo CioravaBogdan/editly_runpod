@@ -297,27 +297,40 @@ RUN apt-get install -y nodejs
 
 ### Common Build Issues & Solutions
 
-**Node.js Package Conflict**:
+**Node.js Package Conflict** (CRITICAL FIX):
 
 - **Problem**: `dpkg: error processing archive .../nodejs_18.20.8-1nodesource1_amd64.deb (--unpack): trying to overwrite '/usr/include/node/common.gypi', which is also in package libnode-dev`
-- **Solution**: Install Node.js 18 from NodeSource FIRST before any other dependencies in `Dockerfile.runpod`
-- **Prevention**: Sequential installation order prevents libnode-dev auto-installation conflicts
+- **Root Cause**: libnode-dev package conflicts with NodeSource Node.js installation
+- **Solution**: Explicitly remove conflicting packages BEFORE Node.js installation
+- **Prevention**: Always remove nodejs, npm, and libnode-dev before installing Node.js from NodeSource
 
-**Package Installation Order** (Critical):
+**CRITICAL Docker Installation Pattern**:
 
-````dockerfile
-**Package Installation Order** (Critical):
 ```dockerfile
-# STEP 1: Remove conflicting packages FIRST
-RUN apt-get remove -y nodejs npm libnode-dev
+# STEP 1: Remove conflicting packages FIRST (CRITICAL)
+RUN apt-get remove -y nodejs npm libnode-dev || true
 
 # STEP 2: Install Node.js from NodeSource (prevents conflicts)
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-RUN apt-get install -y nodejs
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
 
 # STEP 3: Install other dependencies AFTER Node.js is stable
 RUN apt-get install -y python3 python3-pip ffmpeg
-````
+```
+
+**Package Installation Order** (CRITICAL - Updated Pattern):
+
+```dockerfile
+# STEP 1: Remove conflicting packages FIRST (PREVENTS ALL CONFLICTS)
+RUN apt-get remove -y nodejs npm libnode-dev || true
+
+# STEP 2: Install Node.js from NodeSource (prevents conflicts)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs
+
+# STEP 3: Install other dependencies AFTER Node.js is stable
+RUN apt-get install -y python3 python3-pip ffmpeg
+```
 
 **CommonJS/ES Module Compatibility** (Critical):
 
