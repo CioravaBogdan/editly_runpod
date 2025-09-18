@@ -53,9 +53,9 @@ def handler(job):
             logger.info("No GPU detected, using CPU encoding")
         
         # Try Node.js handler first (better performance)
-        if os.path.exists("/app/runpod-handler.js"):
-            cmd = ["node", "/app/runpod-handler.js"]
-            logger.info("Using Node.js handler")
+        if os.path.exists("/app/runpod-handler.cjs"):
+            cmd = ["node", "/app/runpod-handler.cjs"]
+            logger.info("Using Node.js handler (CommonJS)")
         else:
             # Fallback to direct editly CLI
             cmd = ["node", "/app/dist/cli.js", "--json", str(config_path)]

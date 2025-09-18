@@ -44,10 +44,10 @@ COPY . .
 # Build TypeScript with error handling
 RUN npm run build 2>/dev/null || echo "Build completed with warnings"
 
-# Copy RunPod handlers with proper naming
+# Copy RunPod handlers with proper naming for CommonJS
 COPY runpod_handler.py ./
-COPY runpod-handler-integrated.js ./runpod-handler.js
-COPY storage-handler.js ./
+COPY runpod-handler-integrated.js ./runpod-handler.cjs
+COPY storage-handler.js ./storage-handler.cjs
 
 # Environment pentru RunPod
 ENV RUNPOD_ENDPOINT=true

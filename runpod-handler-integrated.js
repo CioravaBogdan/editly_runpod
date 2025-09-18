@@ -24,7 +24,7 @@ try {
 // Storage handler pentru S3/local with error handling
 let storageHandler;
 try {
-  storageHandler = require("./storage-handler");
+  storageHandler = require("./storage-handler.cjs");
 } catch (error) {
   console.warn("⚠ Storage handler not found, using local file system");
   storageHandler = {

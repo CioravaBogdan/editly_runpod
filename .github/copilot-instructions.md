@@ -2,25 +2,38 @@
 
 This document guides AI coding agents working with the **Editly RunPod Serverless** video processing system. This is a production-ready, GPU-accelerated video editing platform designed for scalable cloud deployment.
 
+**Repository**: https://github.com/CioravaBogdan/editly_runpod
+
 ## 🏗️ Project Architecture
 
 ### Core Components
 
-- **Python Handler**: `runpod_handler.py` - Main RunPod serverless entry point
+- **Python Handler**: `runpod_handler.py` - Main RunPod serverless entry point (timeout: 5 minutes)
 - **Node.js Processor**: `runpod-handler-integrated.js` - Video processing engine with Editly integration
 - **Storage Layer**: `storage-handler.js` - Abstraction for local/S3/Cloudflare R2 storage
 - **Docker Images**:
-  - `Dockerfile.runpod` - Production container with GPU acceleration
+  - `Dockerfile.runpod` - Production container with GPU acceleration (Ubuntu 22.04 + Node.js 18)
   - `Dockerfile.test` - Testing and development container
+- **N8N Integration**: Complete workflow files for automation (`n8n-*.json`)
 
 ### Dual Processing Architecture
 
 The system implements a **fallback architecture** for maximum reliability:
 
-1. **Primary**: Editly library (Node.js) for advanced video editing
+1. **Primary**: Editly library (Node.js/TypeScript) for advanced video editing
 2. **Fallback**: FFmpeg direct processing when Editly unavailable
 3. **GPU Acceleration**: NVIDIA NVENC encoding when GPU available
 4. **CPU Fallback**: Software encoding when GPU unavailable
+
+### Python-to-Node.js Bridge Pattern
+
+```python
+# runpod_handler.py - Entry point that detects best handler
+if os.path.exists("/app/runpod-handler.js"):
+    cmd = ["node", "/app/runpod-handler.js"]  # Preferred integrated handler
+else:
+    cmd = ["node", "/app/dist/cli.js", "--json", str(config_path)]  # Editly CLI fallback
+```
 
 ## 🚀 Development Workflows
 
@@ -40,7 +53,68 @@ Always test locally before RunPod deployment:
 
 # Docker build verification
 .\build-test.ps1
+
+# GPU monitoring during development
+.\monitor-gpu.ps1
 ```
+
+### N8N Integration Workflow
+
+The system includes complete N8N automation workflows:
+
+```javascript
+// N8N HTTP Request Node Configuration
+{
+  "url": "https://api.runpod.ai/v2/YOUR_ENDPOINT_ID/runsync",
+  "timeout": 2700000, // 45 minutes (CRITICAL for large videos)
+  "headers": {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  }
+}
+```
+
+**Critical N8N Settings**:
+
+- **HTTP Request Timeout**: 45 minutes (2700000ms) - Default 10min will cause failures
+- **Workflow Timeout**: Match or exceed HTTP timeout
+- **Keep Workflow Data**: Enabled for debugging large video processing
+
+### N8N Workflow Files Guide
+
+**Audio Synchronization Workflows**:
+
+- `n8n-audio-preserved-workflow.json` - Audio timing preservation
+- `n8n-perfect-audio-workflow.json` - High-quality audio sync
+- `perfect-audio-sync.json` - Template for 9-second audio sync
+
+**Integration Workflows**:
+
+- `n8n-dynamic-duration-workflow.json` - Variable video lengths
+- `n8n-test-workflow.json` - Basic functionality testing
+- `n8n-optimized-fast-code.js` - Performance-optimized processing
+
+**Google Drive Integration**:
+
+- `N8N-GOOGLE-DRIVE-FINAL-RAPID.js` - Fast Google Drive integration
+- `N8N-GOOGLE-DRIVE-OPTIMIZED.js` - Optimized Drive processing
+- `N8N-HD-QUALITY-FINAL.js` - High-definition quality settings
+
+**Common N8N Issues & Solutions**:
+
+1. **Timeout Errors**: Default 10-minute timeout insufficient for video processing
+
+   - Solution: Set HTTP Request timeout to 2700000ms (45 minutes)
+   - Also configure Workflow Settings timeout to match
+
+2. **Memory Issues**: Large video processing can exhaust N8N memory
+
+   - Solution: Enable "Keep Workflow Data" for monitoring
+   - Use chunked processing for large files
+
+3. **Google Drive Rate Limits**: API quota exhaustion with bulk operations
+   - Solution: Implement delays between requests
+   - Use batch operations where possible
 
 ### Testing Patterns
 
@@ -48,6 +122,7 @@ Always test locally before RunPod deployment:
 - **Integration Tests**: Use `test-runpod-local.ps1` for handler testing
 - **Build Verification**: Use `build-test.ps1` for Docker validation
 - **Quick Validation**: Use `test-quick.ps1` for rapid iteration
+- **N8N Testing**: Use provided workflow files (`n8n-*.json`) for automation testing
 
 ### Test Payloads
 
@@ -55,8 +130,9 @@ The project includes comprehensive test files:
 
 - `test-simple.json` - Basic single clip test
 - `test-complex-full.json` - Full feature test with multiple layers
-- `test-performance.json` - High-load performance testing
+- `test-performance.json` - High-load performance testing (32 clips)
 - `runpod-test-payload.json` - RunPod-specific format testing
+- `n8n-example-payload.json` - N8N workflow integration examples
 
 ## 📁 Key File Patterns
 
@@ -164,6 +240,61 @@ RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 RUN apt-get install -y nodejs
 ```
 
+### Windows PowerShell Development Commands
+
+**Testing Commands**:
+
+```powershell
+# Quick 8-clip performance test (recommended for iteration)
+.\test-quick.ps1
+
+# Comprehensive benchmark testing (32 clips, multiple configurations)
+.\test-editly.ps1 -Mode benchmark -Clips 32
+
+# Parallel processing test for performance comparison
+.\concurrent-test.ps1
+
+# Local RunPod handler simulation (tests Python → Node.js bridge)
+.\test-runpod-local.ps1
+
+# Native Windows execution test
+.\run-native-windows.ps1
+```
+
+**Build & Deployment Commands**:
+
+```powershell
+# Docker build with error checking
+.\build-test.ps1
+
+# Test different shell configurations
+.\build-test.ps1 -Shell cmd      # Use CMD instead of PowerShell
+.\build-test.ps1 -Shell powershell # Use PowerShell (default)
+
+# GPU setup and monitoring
+.\setup-gpu.ps1                  # Configure GPU acceleration
+.\monitor-gpu.ps1                # Real-time GPU monitoring during processing
+```
+
+**Development Workflow**:
+
+```powershell
+# 1. Quick validation
+.\test-quick.ps1
+
+# 2. If successful, test RunPod integration
+.\test-runpod-local.ps1
+
+# 3. Build Docker image for deployment
+.\build-test.ps1
+
+# 4. Monitor GPU during processing (separate terminal)
+.\monitor-gpu.ps1
+
+# 5. Run comprehensive benchmark
+.\test-editly.ps1 -Mode benchmark -Clips 32
+```
+
 ### Common Build Issues & Solutions
 
 **Node.js Package Conflict**:
@@ -171,6 +302,31 @@ RUN apt-get install -y nodejs
 - **Problem**: `dpkg: error processing archive .../nodejs_18.20.8-1nodesource1_amd64.deb (--unpack): trying to overwrite '/usr/include/node/common.gypi', which is also in package libnode-dev`
 - **Solution**: Install Node.js 18 from NodeSource FIRST before any other dependencies in `Dockerfile.runpod`
 - **Prevention**: Sequential installation order prevents libnode-dev auto-installation conflicts
+
+**Package Installation Order** (Critical):
+
+```dockerfile
+# STEP 1: Remove conflicting packages FIRST
+RUN apt-get remove -y nodejs npm libnode-dev
+
+# STEP 2: Install Node.js from NodeSource (prevents conflicts)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+RUN apt-get install -y nodejs
+
+# STEP 3: Install other dependencies AFTER Node.js is stable
+RUN apt-get install -y python3 python3-pip ffmpeg
+```
+
+**Docker Build Debugging**:
+
+```powershell
+# Build with verbose output
+docker build -f Dockerfile.runpod -t editly-test . --progress=plain --no-cache
+
+# Check intermediate layers
+docker run --rm -it editly-test node --version
+docker run --rm -it editly-test python3 --version
+```
 
 ### Environment Variables
 
@@ -268,6 +424,105 @@ Monitor GPU usage in production:
 ```bash
 # Use the monitoring script
 .\monitor-gpu.ps1
+```
+
+## 🎯 Project Conventions & File Patterns
+
+### Naming Conventions
+
+**PowerShell Scripts**:
+
+- `test-*.ps1` - Testing scripts with specific purposes
+- `build-*.ps1` - Build and Docker-related scripts
+- `monitor-*.ps1` - System monitoring and debugging scripts
+
+**Configuration Files**:
+
+- `runpod-*.js` - RunPod handler implementations
+- `test-*.json` - Test payload specifications
+- `n8n-*.json` - N8N workflow configurations
+- `*-config.md` - Configuration documentation
+
+**Documentation Structure**:
+
+- `README-*.md` - Component-specific documentation
+- `*-FINAL.md` - Implementation completion reports
+- `*-OPTIMIZATION.md` - Performance tuning guides
+- `QUICK_*.md` - Rapid deployment guides
+
+### File Organization Patterns
+
+**Test Files Hierarchy**:
+
+```
+test-simple.json          # Basic functionality
+test-complex-full.json    # Complete feature set
+test-performance.json     # Load/stress testing
+test-speed-*.json         # Speed optimization variants
+runpod-test-payload.json  # RunPod-specific format
+n8n-example-payload.json  # N8N integration examples
+```
+
+**N8N Integration Files**:
+
+```
+n8n-*.json                # Workflow definitions
+N8N-*.js                  # Code snippets for workflows
+*-audio-*.json            # Audio synchronization workflows
+*-google-drive-*.js       # Google Drive integration code
+```
+
+**Documentation Layers**:
+
+```
+README.md                 # Main project overview
+README-RUNPOD.md         # Deployment-specific guide
+README-EDITLY-PARAMETERS.md # Video processing parameters
+QUICK_DEPLOY_GUIDE.md    # Rapid deployment steps
+runpod-config.md         # Environment configuration
+```
+
+### Code Style Patterns
+
+**Error Handling Convention**:
+
+```javascript
+try {
+  await processWithEditly(editSpec, outputPath);
+  processingMethod = "editly";
+} catch (editlyError) {
+  console.warn("Editly failed, falling back to FFmpeg:", editlyError.message);
+  await processWithFFmpeg(input, outputPath);
+  processingMethod = "ffmpeg";
+}
+```
+
+**Logging Pattern**:
+
+```javascript
+console.log(`✅ Success: ${message}`); // Success operations
+console.warn(`⚠ Warning: ${message}`); // Non-fatal issues
+console.error(`❌ Error: ${message}`); // Fatal errors
+console.log(`🚀 Starting: ${process}`); // Process initiation
+console.log(`📊 Stats: ${metrics}`); // Performance data
+```
+
+**Module Import Strategy**:
+
+```javascript
+// Graceful module loading with fallbacks
+let editly;
+try {
+  editly = require("./dist/index.js"); // Try compiled version first
+  console.log("✓ Loaded Editly from dist/index.js");
+} catch (error) {
+  try {
+    editly = require("./src/index.ts"); // Fallback to source
+    console.log("✓ Loaded Editly from src/index.ts");
+  } catch (fallbackError) {
+    console.warn("⚠ Could not import Editly module, using FFmpeg fallback");
+  }
+}
 ```
 
 ## 🔧 Common Modifications
