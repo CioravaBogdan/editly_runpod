@@ -35,8 +35,8 @@ trying to overwrite '/usr/include/node/common.gypi', which is also in package li
 
 ```
 Repository: CioravaBogdan/editly_runpod
-Branch: main
-Dockerfile Path: Dockerfile
+Branch: master
+Dockerfile Path: Dockerfile.runpod
 Build Context: .
 ```
 

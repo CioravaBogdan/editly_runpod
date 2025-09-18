@@ -99,7 +99,7 @@ The Editly RunPod Serverless system is now **PRODUCTION READY** with:
 
 1. **Deploy on RunPod Serverless**:
 
-   - Repository: `CioravaBogdan/EDITLY_VIDEO_EDITOR`
+   - Repository: `CioravaBogdan/editly_runpod`
    - Dockerfile: `Dockerfile.runpod`
    - Branch: `master`
 
