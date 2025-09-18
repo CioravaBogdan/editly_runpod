@@ -33,10 +33,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
-# Install FFmpeg with NVIDIA hardware acceleration support
-RUN add-apt-repository ppa:savoury1/ffmpeg5 && \
-    add-apt-repository ppa:savoury1/ffmpeg4 && \
-    apt-get update && \
+# Install FFmpeg with NVIDIA hardware acceleration support (using standard Ubuntu packages)
+RUN apt-get update && \
     apt-get install -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
