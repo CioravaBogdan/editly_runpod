@@ -5,6 +5,30 @@
 **URL**: https://github.com/CioravaBogdan/editly_runpod
 **Status**: Complet configurat pentru RunPod Serverless
 
+## 🚨 RESOLVED: Node.js Package Conflict Issue
+
+**Problem**: The same Node.js package conflict we reported was occurring in the last 10 build attempts. The issue was that `libnode-dev` was being installed with base dependencies, causing conflicts when trying to install Node.js 18 from NodeSource.
+
+**Root Cause**: The error was:
+
+```
+dpkg: error processing archive .../nodejs_18.20.8-1nodesource1_amd64.deb (--unpack):
+trying to overwrite '/usr/include/node/common.gypi', which is also in package libnode-dev 12.22.9~dfsg-1ubuntu3.6
+```
+
+**Solution Applied**: ✅ FIXED
+
+- Modified `Dockerfile.runpod` to install Node.js 18 from NodeSource FIRST before any other dependencies
+- This prevents the libnode-dev package from being installed automatically with base dependencies
+- Sequential installation order ensures no package conflicts
+
+**Verification**: ✅ CONFIRMED WORKING
+
+- Docker build completed successfully
+- Container runs without errors
+- RunPod SDK imports correctly
+- Ready for deployment
+
 ## 📋 Configurație RunPod Console
 
 ### 1. Repository Settings
