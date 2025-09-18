@@ -15,7 +15,8 @@ RUN apt-get -y install \
     librsvg2-dev \
     libxi-dev \
     pkg-config \
-    python-is-python3
+    python-is-python3 \
+    python3-pip
 
 WORKDIR /app
 
@@ -34,29 +35,10 @@ RUN npm run build
 # Prune dev dependencies
 RUN npm prune --omit=dev
 
-# Purge build dependencies
-RUN apt-get --purge autoremove -y \
-    build-essential \
-    libcairo2-dev \
-    libgif-dev \
-    libgl1-mesa-dev \
-    libglew-dev \
-    libglu1-mesa-dev \
-    libjpeg-dev \
-    libpango1.0-dev \
-    librsvg2-dev \
-    libxi-dev \
-    pkg-config \
-    python-is-python3
-
-# Remove Apt cache
-RUN rm -rf /var/lib/apt/lists/* /var/cache/apt/*
-
 # ---- Modern FFmpeg stage ----
-# Use latest FFmpeg with full codec support
 FROM alpine:latest as ffmpeg-download
 
-RUN apk add --no-cache curl unzip
+RUN apk add --no-cache curl tar xz
 WORKDIR /tmp
 
 # Download latest FFmpeg static build
@@ -67,10 +49,23 @@ RUN curl -L "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmp
 # ---- Final runtime image ----
 FROM node:18-bookworm
 
-# Install minimal runtime libs; no ffmpeg via apt to avoid non-NVENC builds
+# Install Python and system dependencies
 RUN apt-get update -y \
-    && apt-get -y install dumb-init xvfb libcairo2 libpango1.0 libgif7 librsvg2-2 libfribidi0 libfribidi-bin curl \
-    && apt-get -y install libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 \
+    && apt-get -y install \
+    dumb-init \
+    xvfb \
+    libcairo2 \
+    libpango1.0 \
+    libgif7 \
+    librsvg2-2 \
+    libfribidi0 \
+    libfribidi-bin \
+    curl \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libpangoft2-1.0-0 \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 WORKDIR /app
@@ -83,18 +78,22 @@ COPY --from=ffmpeg-download /tmp/ffmpeg-build /usr/local/ffmpeg
 ENV PATH="/usr/local/ffmpeg/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/ffmpeg/lib:${LD_LIBRARY_PATH}"
 
+# Install Python dependencies for RunPod
+RUN pip3 install --no-cache-dir runpod requests
+
 # Ensure `editly` binary available in container
 RUN npm link
 
 # Create necessary directories
 RUN mkdir -p /app/uploads /outputs /app/temp
 
-# Copy and make init script executable
+# Copy Python handler and init script
+COPY runpod_handler.py /app/
 COPY docker-init.sh /docker-init.sh
 RUN chmod +x /docker-init.sh
 
-# Expose API port
+# Expose API port (for internal communication)
 EXPOSE 3001
 
-ENTRYPOINT ["/usr/bin/dumb-init", "--", "/docker-init.sh", "xvfb-run", "--server-args", "-screen 0 1280x1024x24 -ac"]
-CMD [ "node", "dist/api-server.js" ]
+# RunPod expects Python handler
+CMD ["python3", "/app/runpod_handler.py"]
