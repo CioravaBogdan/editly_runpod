@@ -1,9 +1,7 @@
 FROM node:18-bookworm AS build
 
 # Install dependencies for building canvas/gl
-RUN apt-get update -y
-
-RUN apt-get -y install \
+RUN apt-get update -y && apt-get -y install \
     build-essential \
     libcairo2-dev \
     libgif-dev \
@@ -16,7 +14,8 @@ RUN apt-get -y install \
     libxi-dev \
     pkg-config \
     python-is-python3 \
-    python3-pip
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 WORKDIR /app
 
@@ -50,8 +49,7 @@ RUN curl -L "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmp
 FROM node:18-bookworm
 
 # Install Python and system dependencies
-RUN apt-get update -y \
-    && apt-get -y install \
+RUN apt-get update -y && apt-get -y install \
     dumb-init \
     xvfb \
     libcairo2 \
